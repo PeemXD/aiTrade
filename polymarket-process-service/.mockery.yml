@@ -1,0 +1,15 @@
+all: true
+dir: "{{.InterfaceDir}}"
+filename: mocks_test.go
+force-file-write: true
+formatter: goimports
+log-level: info
+structname: "{{.Mock}}{{.InterfaceName}}"
+pkgname: "{{.SrcPackageName}}"
+recursive: false
+template: testify
+packages:
+  github.com/local/polymarket-process-service/pkg/repository:
+  github.com/local/polymarket-process-service/app/aiSignal:
+  github.com/local/polymarket-process-service/app/executionEngine:
+  github.com/local/polymarket-process-service/pkg/cache:

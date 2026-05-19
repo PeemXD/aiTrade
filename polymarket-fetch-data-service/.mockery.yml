@@ -1,0 +1,16 @@
+all: true
+dir: "{{.InterfaceDir}}"
+filename: mocks_test.go
+force-file-write: true
+formatter: goimports
+log-level: info
+structname: "{{.Mock}}{{.InterfaceName}}"
+pkgname: "{{.SrcPackageName}}"
+recursive: false
+template: testify
+packages:
+  github.com/local/polymarket-fetch-data-service/pkg/repository:
+  github.com/local/polymarket-fetch-data-service/app/marketScanner:
+  github.com/local/polymarket-fetch-data-service/app/marketStream:
+  github.com/local/polymarket-fetch-data-service/app/newsFetcher:
+  github.com/local/polymarket-fetch-data-service/pkg/cache:
