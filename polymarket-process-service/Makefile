@@ -9,7 +9,7 @@ setup:
 	@if [ ! -f .env ]; then cp configs/config.example.env .env; fi
 	$(DOCKER) compose -p $(COMPOSE_PROJECT) up -d postgres redis kafka kafka-ui
 	@until $(DOCKER) compose -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U postgres -d polymarket_bot >/dev/null 2>&1; do sleep 1; done
-	@until $(DOCKER) compose -p $(COMPOSE_PROJECT) exec -T kafka kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; do sleep 1; done
+	@until $(DOCKER) compose -p $(COMPOSE_PROJECT) exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; do sleep 1; done
 	$(MAKE) migrate
 
 migrate:

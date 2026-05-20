@@ -19,17 +19,17 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	EventBus     string
-	NatsURL      string
-	KafkaEnabled bool
-	KafkaBrokers []string
-	KafkaClientID string
-	KafkaConsumerGroupFetch string
+	EventBus                  string
+	NatsURL                   string
+	KafkaEnabled              bool
+	KafkaBrokers              []string
+	KafkaClientID             string
+	KafkaConsumerGroupFetch   string
 	KafkaConsumerGroupProcess string
-	KafkaAutoCreateTopics bool
+	KafkaAutoCreateTopics     bool
 
-	DashboardSSEEnabled bool
-	DashboardSSEHeartbeat time.Duration
+	DashboardSSEEnabled     bool
+	DashboardSSEHeartbeat   time.Duration
 	DashboardMarketThrottle time.Duration
 
 	PolymarketGammaBaseURL string
@@ -76,10 +76,12 @@ type Config struct {
 	PolyPrivateKey          string
 	PolyFunderAddress       string
 
-	TakeProfitPct         float64
-	StopLossPct           float64
-	ExitBeforeExpiryHours float64
-	LiveLoopInterval      time.Duration
+	TakeProfitPct                    float64
+	StopLossPct                      float64
+	ExitBeforeExpiryHours            float64
+	LiveLoopInterval                 time.Duration
+	LiveAutoStart                    bool
+	LiveRunOncePublishPipelineEvents bool
 }
 
 func Load() Config {
@@ -94,17 +96,17 @@ func Load() Config {
 		RedisPassword: get("REDIS_PASSWORD", ""),
 		RedisDB:       getInt("REDIS_DB", 0),
 
-		EventBus:     get("EVENT_BUS", "kafka"),
-		NatsURL:      get("NATS_URL", "nats://localhost:4222"),
-		KafkaEnabled: getBool("KAFKA_ENABLED", true),
-		KafkaBrokers: splitCSV(get("KAFKA_BROKERS", "localhost:29092")),
-		KafkaClientID: get("KAFKA_CLIENT_ID", "ai-trade-local"),
-		KafkaConsumerGroupFetch: get("KAFKA_CONSUMER_GROUP_FETCH", "polymarket-fetch-data-service-local"),
+		EventBus:                  get("EVENT_BUS", "kafka"),
+		NatsURL:                   get("NATS_URL", "nats://localhost:4222"),
+		KafkaEnabled:              getBool("KAFKA_ENABLED", true),
+		KafkaBrokers:              splitCSV(get("KAFKA_BROKERS", "localhost:29092")),
+		KafkaClientID:             get("KAFKA_CLIENT_ID", "ai-trade-local"),
+		KafkaConsumerGroupFetch:   get("KAFKA_CONSUMER_GROUP_FETCH", "polymarket-fetch-data-service-local"),
 		KafkaConsumerGroupProcess: get("KAFKA_CONSUMER_GROUP_PROCESS", "polymarket-process-service-local"),
-		KafkaAutoCreateTopics: getBool("KAFKA_AUTO_CREATE_TOPICS", true),
+		KafkaAutoCreateTopics:     getBool("KAFKA_AUTO_CREATE_TOPICS", true),
 
-		DashboardSSEEnabled: getBool("DASHBOARD_SSE_ENABLED", true),
-		DashboardSSEHeartbeat: time.Duration(getInt("DASHBOARD_SSE_HEARTBEAT_SECONDS", 15)) * time.Second,
+		DashboardSSEEnabled:     getBool("DASHBOARD_SSE_ENABLED", true),
+		DashboardSSEHeartbeat:   time.Duration(getInt("DASHBOARD_SSE_HEARTBEAT_SECONDS", 15)) * time.Second,
 		DashboardMarketThrottle: time.Duration(getInt("DASHBOARD_MARKET_THROTTLE_MS", 1000)) * time.Millisecond,
 
 		PolymarketGammaBaseURL: strings.TrimRight(get("POLYMARKET_GAMMA_BASE_URL", "https://gamma-api.polymarket.com"), "/"),
@@ -151,10 +153,12 @@ func Load() Config {
 		PolyPrivateKey:          get("POLY_PRIVATE_KEY", ""),
 		PolyFunderAddress:       get("POLY_FUNDER_ADDRESS", ""),
 
-		TakeProfitPct:         getFloat("TAKE_PROFIT_PCT", 0.20),
-		StopLossPct:           getFloat("STOP_LOSS_PCT", 0.10),
-		ExitBeforeExpiryHours: getFloat("EXIT_BEFORE_EXPIRY_HOURS", 6),
-		LiveLoopInterval:      time.Duration(getInt("LIVE_LOOP_INTERVAL_SECONDS", 60)) * time.Second,
+		TakeProfitPct:                    getFloat("TAKE_PROFIT_PCT", 0.20),
+		StopLossPct:                      getFloat("STOP_LOSS_PCT", 0.10),
+		ExitBeforeExpiryHours:            getFloat("EXIT_BEFORE_EXPIRY_HOURS", 6),
+		LiveLoopInterval:                 time.Duration(getInt("LIVE_LOOP_INTERVAL_SECONDS", 60)) * time.Second,
+		LiveAutoStart:                    getBool("LIVE_AUTO_START", false),
+		LiveRunOncePublishPipelineEvents: getBool("LIVE_RUN_ONCE_PUBLISH_PIPELINE_EVENTS", false),
 	}
 }
 
@@ -163,7 +167,7 @@ func (c Config) RedactedFields() map[string]any {
 		"app_env": c.AppEnv, "app_port": c.AppPort, "execution_mode": c.ExecutionMode,
 		"ai_provider": c.AIProvider, "ai_model": c.AIModel, "ai_key_configured": c.AIAPIKey != "",
 		"real_trading_enabled": c.EnableRealTrading,
-		"kafka_enabled": c.KafkaEnabled, "kafka_brokers": c.KafkaBrokers,
+		"kafka_enabled":        c.KafkaEnabled, "kafka_brokers": c.KafkaBrokers,
 	}
 }
 

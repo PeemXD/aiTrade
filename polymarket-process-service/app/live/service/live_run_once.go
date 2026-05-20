@@ -45,7 +45,9 @@ type Service struct {
 	log       *slog.Logger
 	seen      *seenTracker
 	loopMu    sync.Mutex
+	runMu     sync.Mutex
 	running   bool
+	stopping  bool
 	cancel    context.CancelFunc
 }
 
@@ -74,17 +76,31 @@ func NewService(deps Dependencies) *Service {
 	}
 }
 
-func (s *Service) RunOnce(ctx context.Context) (livemodel.LiveResult, error) {
-	result := livemodel.LiveResult{}
+func (s *Service) RunOnce(ctx context.Context) (result livemodel.LiveResult, err error) {
+	if !s.runMu.TryLock() {
+		s.recordError(ctx, &result, "run_once_skipped", "previous RunOnce is still running", nil)
+		return result, nil
+	}
+	defer s.runMu.Unlock()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.recordError(ctx, &result, "run_once_panic_recovered", "RunOnce panic recovered", nil)
+			s.log.Error("live_run_once_panic_recovered", "panic", recovered)
+			err = nil
+		}
+	}()
+	if !s.cfg.LiveRunOncePublishPipelineEvents {
+		ctx = eventbus.WithoutPipelineEvents(ctx)
+	}
 	markets, err := s.store.ListMarkets(ctx)
 	if err != nil {
-		result.Events = append(result.Events, liveError("load_markets_failed", err))
+		s.recordError(ctx, &result, "load_markets_failed", "failed to load markets", err)
 		return result, nil
 	}
 	result.MarketsLoaded = len(markets)
 	articles, err := s.store.ListNewsArticles(ctx, 100)
 	if err != nil {
-		result.Events = append(result.Events, liveError("load_news_failed", err))
+		s.recordError(ctx, &result, "load_news_failed", "failed to load news", err)
 		return result, nil
 	}
 	result.ArticlesLoaded = len(articles)
@@ -119,20 +135,19 @@ func (s *Service) processArticle(ctx context.Context, article newsmodel.NewsArti
 	for _, match := range matches {
 		result.MatchesCreated++
 		if err := s.store.SaveMatch(ctx, match); err != nil {
-			result.Events = append(result.Events, liveError("save_match_failed", err))
+			s.recordError(ctx, result, "save_match_failed", "failed to save news-market match", err)
 			continue
 		}
 		s.publishAudit(ctx, "news_matched", match.MarketID, map[string]any{"news_id": match.NewsID, "market_id": match.MarketID, "score": match.FinalScore, "reason": match.Reason})
 		s.publish(ctx, kafka.TopicNewsMarketMatched, match)
 		market, err := s.store.GetMarket(ctx, match.MarketID)
 		if err != nil {
-			result.Events = append(result.Events, liveError("market_not_found", err))
+			s.recordError(ctx, result, "market_not_found", "matched market was not found", err)
 			continue
 		}
 		signal, err := s.ai.Analyze(ctx, market, article)
 		if err != nil {
-			result.Events = append(result.Events, liveError("ai_signal_failed", err))
-			s.log.Warn("ai_signal_failed", "market_id", market.ID, "news_id", article.ID, "error", err)
+			s.recordError(ctx, result, "ai_signal_failed", "AI signal generation failed", err)
 			continue
 		}
 		if !signal.Disabled {
@@ -140,7 +155,7 @@ func (s *Service) processArticle(ctx context.Context, article newsmodel.NewsArti
 		}
 		decision, err := s.prob.Calculate(ctx, probmodel.CalculateRequest{MarketID: market.ID, NewsID: article.ID, Side: "buy", Outcome: "yes"})
 		if err != nil {
-			result.Events = append(result.Events, liveError("probability_failed", err))
+			s.recordError(ctx, result, "probability_failed", "probability calculation failed", err)
 			continue
 		}
 		if decision.Decision != probmodel.DecisionCandidate {
@@ -149,7 +164,7 @@ func (s *Service) processArticle(ctx context.Context, article newsmodel.NewsArti
 		result.ProbabilityCandidates++
 		risk, err := s.risk.Evaluate(ctx, riskmodel.EvaluateRequest{ProbabilityDecisionID: decision.ID})
 		if err != nil {
-			result.Events = append(result.Events, liveError("risk_failed", err))
+			s.recordError(ctx, result, "risk_failed", "risk evaluation failed", err)
 			continue
 		}
 		if !risk.Approved {
@@ -159,7 +174,7 @@ func (s *Service) processArticle(ctx context.Context, article newsmodel.NewsArti
 		result.RiskApproved++
 		order, err := s.execution.CreateFromRiskDecision(ctx, risk.ID)
 		if err != nil {
-			result.Events = append(result.Events, liveError("execution_failed", err))
+			s.recordError(ctx, result, "execution_failed", "paper execution failed", err)
 			continue
 		}
 		if order.TradeID != "" {
@@ -171,7 +186,7 @@ func (s *Service) processArticle(ctx context.Context, article newsmodel.NewsArti
 func (s *Service) monitorPositions(ctx context.Context, result *livemodel.LiveResult) {
 	decisions, err := s.monitor.UpdateOpenPositions(ctx)
 	if err != nil {
-		result.Events = append(result.Events, liveError("position_monitor_failed", err))
+		s.recordError(ctx, result, "position_monitor_failed", "position monitor failed", err)
 		return
 	}
 	for _, decision := range decisions {
@@ -179,7 +194,7 @@ func (s *Service) monitorPositions(ctx context.Context, result *livemodel.LiveRe
 			continue
 		}
 		if _, err := s.exit.Execute(ctx, decision); err != nil {
-			result.Events = append(result.Events, liveError("exit_position_failed", err))
+			s.recordError(ctx, result, "exit_position_failed", "exit position failed", err)
 			continue
 		}
 		result.PositionsClosed++
@@ -332,6 +347,23 @@ func (s *Service) publish(ctx context.Context, topic string, data any) {
 	}
 }
 
+func (s *Service) recordError(ctx context.Context, result *livemodel.LiveResult, eventType, message string, err error) {
+	event := liveError(eventType, message, err)
+	if result != nil {
+		result.Events = append(result.Events, event)
+	}
+	attrs := []any{"event", eventType, "message", message}
+	if err != nil {
+		attrs = append(attrs, "error", err)
+	}
+	s.log.Warn("live_run_error", attrs...)
+	payload := map[string]any{"event": eventType, "message": message}
+	if err != nil {
+		payload["error"] = err.Error()
+	}
+	s.publish(ctx, "error", payload)
+}
+
 func (s *Service) publishAudit(ctx context.Context, event, entityID string, payload map[string]any) {
 	_ = s.store.SaveAudit(ctx, repository.AuditLog{ID: idgen.New(), Event: event, EntityID: entityID, Payload: payload, CreatedAt: time.Now().UTC()})
 	s.publish(ctx, kafka.TopicAuditCreated, map[string]any{"event": event, "entity_id": entityID, "payload": payload})
@@ -341,10 +373,15 @@ func unmarshalPayload(envelope kafka.EventEnvelope, out any) error {
 	return json.Unmarshal(envelope.Payload, out)
 }
 
-func liveError(event string, err error) livemodel.LiveAuditEvent {
-	message := ""
+func liveError(event, message string, err error) livemodel.LiveAuditEvent {
 	if err != nil {
-		message = err.Error()
+		if message == "" {
+			message = err.Error()
+		}
 	}
-	return livemodel.LiveAuditEvent{Type: event, Message: message}
+	payload := map[string]any{}
+	if err != nil {
+		payload["error"] = err.Error()
+	}
+	return livemodel.LiveAuditEvent{Type: event, Message: message, Payload: payload}
 }

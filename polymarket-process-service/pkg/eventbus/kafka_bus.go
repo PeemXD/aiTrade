@@ -23,6 +23,9 @@ func (b *KafkaBus) Publish(ctx context.Context, event Event) {
 	if b == nil || b.producer == nil || event.Topic == "" {
 		return
 	}
+	if !PipelineEventsEnabled(ctx) {
+		return
+	}
 	if err := b.producer.Publish(ctx, event.Topic, kafka.KeyFromPayload(event.Topic, event.Data), event.Data); err != nil {
 		b.log.Error("eventbus_kafka_publish_failed", "topic", event.Topic, "error", err)
 	}

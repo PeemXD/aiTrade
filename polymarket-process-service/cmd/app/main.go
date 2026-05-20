@@ -92,6 +92,10 @@ func main() {
 			stop()
 		}
 	}()
+	if cfg.LiveAutoStart {
+		started := live.Start(ctx)
+		log.Info("live_loop_auto_start", "started", started, "interval_seconds", int(cfg.LiveLoopInterval.Seconds()))
+	}
 	<-ctx.Done()
 	live.Stop()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

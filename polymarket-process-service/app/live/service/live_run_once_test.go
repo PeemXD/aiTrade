@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,7 +62,42 @@ func TestRunOnceExternalErrorReturnsGracefulResult(t *testing.T) {
 	require.Equal(t, "load_markets_failed", result.Events[0].Type)
 }
 
+func TestRunOnceDoesNotOverlapAndPublishesErrorEvent(t *testing.T) {
+	store := repository.NewMemoryStore()
+	bus := &recordingBus{}
+	service := newTestLiveServiceWithBus(t, store, testConfig("test-key"), fakeChatClient{}, bus)
+	service.runMu.Lock()
+	result, err := service.RunOnce(context.Background())
+	service.runMu.Unlock()
+	require.NoError(t, err)
+	require.Len(t, result.Events, 1)
+	require.Equal(t, "run_once_skipped", result.Events[0].Type)
+	require.True(t, bus.HasTopic("error"))
+}
+
+func TestLiveLoopStartStopAreIdempotent(t *testing.T) {
+	store := repository.NewMemoryStore()
+	cfg := testConfig("")
+	cfg.LiveLoopInterval = time.Hour
+	service := newTestLiveService(t, store, cfg, fakeChatClient{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.True(t, service.Start(ctx))
+	require.False(t, service.Start(ctx))
+	require.Equal(t, "running", service.Status())
+	require.True(t, service.Stop())
+	require.False(t, service.Stop())
+	require.Eventually(t, func() bool {
+		return service.Status() == "stopped"
+	}, time.Second, 10*time.Millisecond)
+}
+
 func newTestLiveService(t *testing.T, store repository.Store, cfg config.Config, chat aisignal.ChatClient) *Service {
+	t.Helper()
+	return newTestLiveServiceWithBus(t, store, cfg, chat, eventbus.NewInMemory())
+}
+
+func newTestLiveServiceWithBus(t *testing.T, store repository.Store, cfg config.Config, chat aisignal.ChatClient, bus eventbus.Bus) *Service {
 	t.Helper()
 	matcher := newsmarketmatcher.NewMatcherService(0.01, 3)
 	ai := aisignal.NewSignalService(cfg, chat, store, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -71,7 +107,6 @@ func newTestLiveService(t *testing.T, store repository.Store, cfg config.Config,
 	execution.SetStartingCash(cfg.PaperStartingBalanceUSD)
 	monitor := positionengine.NewMonitor(cfg, store)
 	exit := exitengine.NewExitEngine(store, execution)
-	bus := eventbus.NewInMemory()
 	ai.SetEventBus(bus)
 	prob.SetEventBus(bus)
 	risk.SetEventBus(bus)
@@ -149,4 +184,28 @@ type failingStore struct {
 
 func (s failingStore) ListMarkets(context.Context) ([]marketmodel.Market, error) {
 	return nil, errors.New("store unavailable")
+}
+
+type recordingBus struct {
+	mu     sync.Mutex
+	events []eventbus.Event
+}
+
+func (b *recordingBus) Publish(_ context.Context, event eventbus.Event) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.events = append(b.events, event)
+}
+
+func (b *recordingBus) Subscribe(string, eventbus.Handler) {}
+
+func (b *recordingBus) HasTopic(topic string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, event := range b.events {
+		if event.Topic == topic {
+			return true
+		}
+	}
+	return false
 }

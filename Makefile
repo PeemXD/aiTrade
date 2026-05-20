@@ -14,7 +14,7 @@ setup:
 	@if [ ! -f $(PROCESS_DIR)/.env ]; then cp $(PROCESS_DIR)/configs/config.example.env $(PROCESS_DIR)/.env; fi
 	$(DOCKER) compose -p $(COMPOSE_PROJECT) up -d postgres redis kafka kafka-ui
 	@until $(DOCKER) compose -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U postgres -d polymarket_bot >/dev/null 2>&1; do sleep 1; done
-	@until $(DOCKER) compose -p $(COMPOSE_PROJECT) exec -T kafka kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; do sleep 1; done
+	@until $(DOCKER) compose -p $(COMPOSE_PROJECT) exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; do sleep 1; done
 	$(MAKE) migrate
 
 migrate:
@@ -33,8 +33,7 @@ run-process:
 	cd $(PROCESS_DIR) && $(GO) run ./cmd/app
 
 run:
-	$(MAKE) setup
-	GO=$(GO) ./run-polymarket-services.sh
+	GO=$(GO) DOCKER=$(DOCKER) COMPOSE_PROJECT=$(COMPOSE_PROJECT) ./scripts/run-local.sh
 
 run-once:
 	curl -X POST http://localhost:8080/api/v1/live/run-once

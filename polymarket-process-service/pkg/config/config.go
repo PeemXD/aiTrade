@@ -76,10 +76,12 @@ type Config struct {
 	PolyPrivateKey          string
 	PolyFunderAddress       string
 
-	TakeProfitPct         float64
-	StopLossPct           float64
-	ExitBeforeExpiryHours float64
-	LiveLoopInterval      time.Duration
+	TakeProfitPct                    float64
+	StopLossPct                      float64
+	ExitBeforeExpiryHours            float64
+	LiveLoopInterval                 time.Duration
+	LiveAutoStart                    bool
+	LiveRunOncePublishPipelineEvents bool
 }
 
 func Load() Config {
@@ -151,10 +153,12 @@ func Load() Config {
 		PolyPrivateKey:          get("POLY_PRIVATE_KEY", ""),
 		PolyFunderAddress:       get("POLY_FUNDER_ADDRESS", ""),
 
-		TakeProfitPct:         getFloat("TAKE_PROFIT_PCT", 0.20),
-		StopLossPct:           getFloat("STOP_LOSS_PCT", 0.10),
-		ExitBeforeExpiryHours: getFloat("EXIT_BEFORE_EXPIRY_HOURS", 6),
-		LiveLoopInterval:      time.Duration(getInt("LIVE_LOOP_INTERVAL_SECONDS", 60)) * time.Second,
+		TakeProfitPct:                    getFloat("TAKE_PROFIT_PCT", 0.20),
+		StopLossPct:                      getFloat("STOP_LOSS_PCT", 0.10),
+		ExitBeforeExpiryHours:            getFloat("EXIT_BEFORE_EXPIRY_HOURS", 6),
+		LiveLoopInterval:                 time.Duration(getInt("LIVE_LOOP_INTERVAL_SECONDS", 60)) * time.Second,
+		LiveAutoStart:                    getBool("LIVE_AUTO_START", false),
+		LiveRunOncePublishPipelineEvents: getBool("LIVE_RUN_ONCE_PUBLISH_PIPELINE_EVENTS", false),
 	}
 }
 
@@ -164,6 +168,8 @@ func (c Config) RedactedFields() map[string]any {
 		"ai_provider": c.AIProvider, "ai_model": c.AIModel, "ai_key_configured": c.AIAPIKey != "",
 		"real_trading_enabled": c.EnableRealTrading,
 		"kafka_enabled":        c.KafkaEnabled, "kafka_brokers": c.KafkaBrokers,
+		"live_auto_start":            c.LiveAutoStart,
+		"live_loop_interval_seconds": int(c.LiveLoopInterval.Seconds()),
 	}
 }
 

@@ -81,6 +81,9 @@ func (c *Consumer) HandleMessage(ctx context.Context, msg Message, commit Commit
 		return handler(ctx, envelope)
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		c.log.Error("kafka_handler_failed", "topic", msg.Topic, "event_id", envelope.EventID, "correlation_id", envelope.CorrelationID, "error", err)
 		if c.producer == nil {
 			return err

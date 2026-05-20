@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -26,7 +27,7 @@ func (h *LiveHandler) RunOnce(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *LiveHandler) Start(w http.ResponseWriter, r *http.Request) {
-	started := h.service.Start(r.Context())
+	started := h.service.Start(context.Background())
 	response.JSON(w, http.StatusOK, map[string]any{"status": h.service.Status(), "started": started})
 }
 

@@ -7,6 +7,11 @@ This repository keeps the existing two-service layout:
 
 The services communicate through local Kafka. PostgreSQL stores durable market/news/trade/audit data, Redis stores live state/cache data, Polymarket WebSocket is external data ingestion, REST is the control plane, and SSE is the internal dashboard stream.
 
+## Requirements
+
+- Go 1.26
+- Docker with Docker Compose
+
 ## Local Infrastructure
 
 Root `docker-compose.yml` starts:
@@ -25,8 +30,17 @@ Kafka is the shared event bus. All messages use the `EventEnvelope` JSON shape a
 cp configs/config.example.env .env
 make setup
 make test
+make run
+```
+
+`make run` starts PostgreSQL, Redis, Kafka, Kafka UI, runs migrations, starts both Go services, and keeps them running until Ctrl+C. The process service auto-starts the live loop when `LIVE_AUTO_START=true`.
+
+Individual service commands are also available:
+
+```bash
 make run-fetch
 make run-process
+make run-once
 ```
 
 Useful checks:
@@ -41,6 +55,12 @@ Kafka UI:
 
 ```text
 http://localhost:8081
+```
+
+Or print it with:
+
+```bash
+make kafka-ui
 ```
 
 ## Process API
@@ -79,4 +99,3 @@ The stream emits `connected`, `heartbeat`, market/news/signal/probability/risk/t
 Execution defaults to paper mode. Real trading is ignored unless `EXECUTION_MODE=real`, `ENABLE_REAL_TRADING=true`, and `REAL_TRADING_CONFIRMATION=I_UNDERSTAND_REAL_TRADING` are all set.
 
 Normal tests use mocks and in-memory stores, so `make test` and `go test ./...` do not require Kafka, Docker, or internet access.
-# aiTrade

@@ -43,12 +43,15 @@ func (s *StreamService) Start(ctx context.Context) error {
 	}
 	assetIDs := []string{}
 	assetToMarketID := map[string]string{}
+	knownMarketIDs := map[string]struct{}{}
 	for _, m := range markets {
+		knownMarketIDs[m.ID] = struct{}{}
 		if m.YesTokenID != "" {
 			assetIDs = append(assetIDs, m.YesTokenID)
 			assetToMarketID[m.YesTokenID] = m.ID
 		}
 		if m.NoTokenID != "" {
+			assetIDs = append(assetIDs, m.NoTokenID)
 			assetToMarketID[m.NoTokenID] = m.ID
 		}
 	}
@@ -68,7 +71,7 @@ func (s *StreamService) Start(ctx context.Context) error {
 			s.log.Warn("market stream stopped", "error", err)
 		}
 	}()
-	go s.consume(streamCtx, events, assetToMarketID)
+	go s.consume(streamCtx, events, assetToMarketID, knownMarketIDs)
 	return nil
 }
 
@@ -87,7 +90,7 @@ func (s *StreamService) Running() bool {
 	return s.running
 }
 
-func (s *StreamService) consume(ctx context.Context, events <-chan MarketEvent, assetToMarketID map[string]string) {
+func (s *StreamService) consume(ctx context.Context, events <-chan MarketEvent, assetToMarketID map[string]string, knownMarketIDs map[string]struct{}) {
 	for {
 		select {
 		case ev, ok := <-events:
@@ -98,10 +101,10 @@ func (s *StreamService) consume(ctx context.Context, events <-chan MarketEvent, 
 			if st.UpdatedAt.IsZero() {
 				st.UpdatedAt = time.Now().UTC()
 			}
-			if st.MarketID == "" {
-				st.MarketID = assetToMarketID[st.AssetID]
+			if mappedMarketID := assetToMarketID[st.AssetID]; mappedMarketID != "" {
+				st.MarketID = mappedMarketID
 			}
-			if st.MarketID == "" {
+			if st.MarketID == "" || !knownMarketID(st.MarketID, knownMarketIDs) {
 				continue
 			}
 			previous, hasPrevious := s.previousState(ctx, st.MarketID)
@@ -145,6 +148,14 @@ func (s *StreamService) consume(ctx context.Context, events <-chan MarketEvent, 
 			return
 		}
 	}
+}
+
+func knownMarketID(marketID string, knownMarketIDs map[string]struct{}) bool {
+	if marketID == "" {
+		return false
+	}
+	_, ok := knownMarketIDs[marketID]
+	return ok
 }
 
 func (s *StreamService) previousState(ctx context.Context, marketID string) (LiveMarketState, bool) {
